@@ -45,21 +45,21 @@ struct pos_t {};
 /** Tag type for evaluating the coefficient sign WITH negation */
 struct neg_t {};
 
-/** Tage type for verifying DTF template parameters as `CSet` classes */
+/** Tage type for verifying DTF template parameters as `*CSet` classes */
 struct cset_t {};
 
 } /* namespace detail */
 
 /* Public typedefs -----------------------------------------------------------*/
 /**
- * @brief      This class represents a set of DTF coefficients (i.e. numerator 
- *             or denominator) that, given corresponding inputs, can compute its
- *             own value.
+ * @brief      This class represents a set (i.e. numerator or denominator) of 
+ *             distinct DTF coefficients that, given corresponding inputs, can 
+ *             compute its own value.
  *
  * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
  */
 template<typename... Cs>
-class CSet : detail::cset_t {
+class HeterogeneousCSet : detail::cset_t {
 public:
     /** Number of coefficients in this set */
     constexpr static std::size_t size = sizeof...(Cs);
@@ -69,7 +69,7 @@ private:
     std::tuple<decltype(Cs::val)...> _cs;
 
 public:
-    constexpr CSet(Cs... cs)
+    constexpr HeterogeneousCSet(Cs... cs)
         : _cs{ cs.val... }
     {}
 
@@ -117,6 +117,74 @@ private:
 };
 
 /**
+ * @brief      This class represents a set (i.e. numerator or denominator) of a 
+ *             singular, repeated DTF  coefficient that, given corresponding
+ *             inputs, can compute its own value.
+ *             
+ * @detail     This class serves as a space-optimization -- if the coefficient 
+ *             is the same for every input, then why store multiple copies of 
+ *             the same coefficient value? :)
+ *
+ * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
+ */
+template<typename... Cs>
+class HomogeneousCSet : detail::cset_t {
+public:
+    /** Number of coefficients in this set */
+    constexpr static std::size_t size = sizeof...(Cs);
+
+private:
+    /** The singluar coefficient */
+    float _c;
+
+public:
+    constexpr HomogeneousCSet(Cs... cs)
+        : _c( std::get<0>(std::tuple<Cs...>{ cs... }).val )
+    {}
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::pos_t sign)
+    {
+        return compute<sizeof...(Cs)>(_c, ins, sign);
+    }
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::neg_t sign)
+    {
+        return compute<sizeof...(Cs)>(_c, ins, sign);
+    }
+
+private:
+
+    /* Compile-time recursion for computing coefficient set output */
+
+    template<std::size_t Num, typename Sign>
+    constexpr float compute(const float& c,
+                            const std::array<float, size> ins,
+                            Sign sign)
+    {
+        return compute(c, detail::make_index_sequence<Num>{}, 
+                       ins, sign);
+    }
+
+    template<size_t... I>
+    constexpr float compute(const float& c, detail::index_sequence<I...>, 
+                            const std::array<float, size> ins,
+                            detail::pos_t)
+    {
+        return ((c * ins[I]) + ...);
+    }
+
+    template<size_t... I>
+    constexpr float compute(const float& c, detail::index_sequence<I...>, 
+                            const std::array<float, size> ins,
+                            detail::neg_t)
+    {
+        return ((-1.0 * c * ins[I]) + ...);
+    }
+};
+
+/**
  * @brief      This class implements the actual DTF in difference equation form
  *
  * @tparam     TAs          { description }
@@ -125,15 +193,17 @@ private:
  */
 template<class TAs, class TBs, class TickPolicy>
 class DTF {
-    static_assert(std::is_base_of<detail::cset_t, TAs>::value, "Not a `CSet`");
-    static_assert(std::is_base_of<detail::cset_t, TBs>::value, "Not a `CSet`");
-
+    static_assert(std::is_base_of<detail::cset_t, TAs>::value, 
+                  "A coefs not a `HeterogeneousCSet` nor a `HomogeneousCSet`");
+    static_assert(std::is_base_of<detail::cset_t, TBs>::value, 
+                  "B coefs ot a `HeterogeneousCSet` nor a `HomogeneousCSet`");
 private:
-    TAs _a;
-    TBs _b;
+    TAs _As;
+    TBs _Bs;
     
     /** DTF sampling interval in ticks (tick units must be managed by user) */
-    const std::uint16_t _ts = 1;
+    const std::uint16_t _Ts = 1;
+    
     /** Last tick at which the TF was evaluated */
     std::uint32_t _last_tick = 0;
 
@@ -145,9 +215,9 @@ private:
 
 public:
     constexpr DTF(const TAs& as, const TBs& bs, std::uint16_t ts)
-        : _a{ as }
-        , _b{ bs }
-        , _ts{ ts }
+        : _As{ as }
+        , _Bs{ bs }
+        , _Ts{ ts }
     {
         // TODO: make C/Y/U type derived from template parameter (AS 7/11/2021)
     }
@@ -167,10 +237,10 @@ public:
         // Zero-order Hold
         // TODO: make policy-configurable? (AS 7/11/21)
         std::uint32_t tick = TickPolicy::getTick();
-        if (tick < _last_tick + _ts) { return _Ys[0]; }
+        if (tick < _last_tick + _Ts) { return _Ys[0]; }
 
         add(U, _Us);
-        float Y = _b(_Us, detail::pos_t{}) + _a(_Ys, detail::neg_t{});
+        float Y = _Bs(_Us, detail::pos_t{}) + _As(_Ys, detail::neg_t{});
         add(Y, _Ys);
 
         _last_tick = tick;
@@ -179,12 +249,14 @@ public:
 
 private:
     /**
-     * @brief      { function_description }
+     * @brief      Adds a new value to Ys or Us, shifting older values by 1 to
+     *             the right in order to maintain same ordered association of
+     *             values with their corresponding coefficients
      *
      * @param[in]  val      The value
      * @param      storage  The storage
      *
-     * @tparam     N        { description }
+     * @tparam     N        Number of values in storage
      */
     template<std::size_t N>
     static constexpr void add(float val, std::array<float, N>& storage) {
@@ -229,9 +301,28 @@ constexpr auto makeDTF(const TAs& As, const TBs& Bs, TickPolicy,
  * @return     { description_of_the_return_value }
  */
 template<class... TCs>
-constexpr auto makeCs(const TCs&... cs) -> CSet<decltype(detail::C(TCs{}))...> {
+constexpr auto makeCs(const TCs&... cs)
+    -> HeterogeneousCSet<decltype(detail::C(TCs{}))...>
+{
     return { detail::C{ cs }... };
 }
+
+template<class... TCs>
+constexpr auto makeHomogeonousCs(const TCs&... cs)
+    -> HomogeneousCSet<decltype(detail::C(TCs{}))...>
+{
+    return { detail::C{ cs }... };
+}
+
+namespace util {
+namespace detail {
+template<std::uint32_t Tsize, size_t ... I>
+constexpr auto makeMovingAvg(::dtfe::detail::index_sequence<I ...>)
+    -> decltype(makeHomogeonousCs((1.0f / Tsize * (I / I))...))
+{
+    return makeHomogeonousCs(((void) I, (1.0f / Tsize))...);
+}
+} /* namespace detail */
 
 /**
  * @brief      Makes a moving average (FIR) filter DTF
@@ -245,8 +336,13 @@ constexpr auto makeCs(const TCs&... cs) -> CSet<decltype(detail::C(TCs{}))...> {
  * @return     { description_of_the_return_value }
  */
 template<std::uint32_t Tsize, class TickPolicy>
-constexpr auto makeMovingAvg(TickPolicy p, std::uint16_t Ts) {
-    return makeDTF(makeCs(0.0f), makeCs(1 /* TODO */), p, Ts);
+constexpr auto makeMovingAvg(TickPolicy p, std::uint16_t Ts)
+    //-> decltype(makeDTF(makeCs(0.0f), BCs, p, Ts))
+{
+    auto BCs = detail::makeMovingAvg<Tsize>(
+        ::dtfe::detail::make_index_sequence<Tsize>{}
+    );
+    return makeDTF(makeCs(0.0f), BCs, p, Ts);
 }
 
 /**
@@ -261,9 +357,11 @@ constexpr auto makeMovingAvg(TickPolicy p, std::uint16_t Ts) {
  *
  * @return     { description_of_the_return_value }
  */
-template<std::uint32_t Tsize, class TickPolicy>
-constexpr auto makeSinglePoleIIR(float alpha, TickPolicy p, std::uint16_t Ts) {
+template<class TickPolicy>
+constexpr auto makeSinglePoleIIR(float alpha, TickPolicy p, std::uint16_t Ts)
+    -> decltype(makeDTF(makeCs(-1 * alpha), makeCs(1 - alpha), p, Ts))
+{
     return makeDTF(makeCs(-1 * alpha), makeCs(1 - alpha), p, Ts);
 }
-
+} /* namespace util */
 } /* namespace dtfe */
