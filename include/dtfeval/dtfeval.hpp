@@ -188,7 +188,7 @@ private:
      */
     template<std::size_t N>
     static constexpr void add(float val, std::array<float, N>& storage) {
-        float temp = storage[N - 1], temp1;
+        float temp = storage[N - 1], temp1 = 0;
         for (std::size_t i = 0; i < N; i++) { 
             temp1 = storage[i];
             storage[i] = temp;
@@ -246,7 +246,7 @@ constexpr auto makeCs(const TCs&... cs) -> CSet<decltype(detail::C(TCs{}))...> {
  */
 template<std::uint32_t Tsize, class TickPolicy>
 constexpr auto makeMovingAvg(TickPolicy p, std::uint16_t Ts) {
-    return makeDTF(makeCSet(0.0f), makeCSet(1 /* TODO */), p, Ts);
+    return makeDTF(makeCs(0.0f), makeCs(1 /* TODO */), p, Ts);
 }
 
 /**
@@ -263,7 +263,7 @@ constexpr auto makeMovingAvg(TickPolicy p, std::uint16_t Ts) {
  */
 template<std::uint32_t Tsize, class TickPolicy>
 constexpr auto makeSinglePoleIIR(float alpha, TickPolicy p, std::uint16_t Ts) {
-    return makeDTF(makeCSet(-1 * alpha), makeCSet(1 - alpha), p, Ts);
+    return makeDTF(makeCs(-1 * alpha), makeCs(1 - alpha), p, Ts);
 }
 
 } /* namespace dtfe */
