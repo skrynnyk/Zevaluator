@@ -2,7 +2,7 @@
  * @defgroup   DTFEVAL dtfeval
  *
  * @brief      This file implements the Discrete Transfer Function (DTF)
- *             Evaluating utility class `dtfe::DTF` that sets up the
+ *             Evaluating utility class `zeval::DTF` that sets up the
  *             difference-equation form of a DTF given its numerator and
  *             denominator coefficients.
  *
@@ -17,7 +17,7 @@
 #include <tuple>
 
 /* Private typedefs ----------------------------------------------------------*/
-namespace dtfe {
+namespace zeval {
 namespace detail {
 
 template <size_t ...I>
@@ -48,8 +48,6 @@ struct neg_t {};
 /** Tage type for verifying DTF template parameters as `*CSet` classes */
 struct cset_t {};
 
-} /* namespace detail */
-
 /* Public typedefs -----------------------------------------------------------*/
 /**
  * @brief      This class represents a set (i.e. numerator or denominator) of 
@@ -74,14 +72,12 @@ public:
         : _cs{ cs.val... }
     {}
 
-    constexpr float operator()(const std::array<float, size>& ins, 
-                               detail::pos_t sign)
+    constexpr float operator()(const std::array<float, size>& ins,  pos_t sign)
     {
         return compute(_cs, ins, sign);
     } 
 
-    constexpr float operator()(const std::array<float, size>& ins,
-                               detail::neg_t sign)
+    constexpr float operator()(const std::array<float, size>& ins, neg_t sign)
     {
         return compute(_cs, ins, sign);
     } 
@@ -102,16 +98,14 @@ private:
 
     template<typename Tuple, size_t ... I>
     constexpr float compute(const Tuple& cs, detail::index_sequence<I ...>, 
-                            const std::array<float, size> ins,
-                            detail::pos_t)
+                            const std::array<float, size> ins, pos_t)
     {
         return ((std::get<I>(cs) * ins[I]) + ...);
     }
 
     template<typename Tuple, size_t ... I>
     constexpr float compute(const Tuple& cs, detail::index_sequence<I ...>, 
-                            const std::array<float, size> ins,
-                            detail::neg_t)
+                            const std::array<float, size> ins, neg_t)
     {
         return ((-1.0 * std::get<I>(cs) * ins[I]) + ...);
     }
@@ -143,14 +137,12 @@ public:
         : _c( std::get<0>(std::tuple<Cs...>{ cs... }).val )
     {}
 
-    constexpr float operator()(const std::array<float, size>& ins, 
-                               detail::pos_t sign)
+    constexpr float operator()(const std::array<float, size>& ins, pos_t sign)
     {
         return compute<sizeof...(Cs)>(_c, ins, sign);
     }
 
-    constexpr float operator()(const std::array<float, size>& ins, 
-                               detail::neg_t sign)
+    constexpr float operator()(const std::array<float, size>& ins, neg_t sign)
     {
         return compute<sizeof...(Cs)>(_c, ins, sign);
     }
@@ -170,20 +162,19 @@ private:
 
     template<size_t... I>
     constexpr float compute(const float& c, detail::index_sequence<I...>, 
-                            const std::array<float, size> ins,
-                            detail::pos_t)
+                            const std::array<float, size> ins, pos_t)
     {
         return ((c * ins[I]) + ...);
     }
 
     template<size_t... I>
     constexpr float compute(const float& c, detail::index_sequence<I...>, 
-                            const std::array<float, size> ins,
-                            detail::neg_t)
+                            const std::array<float, size> ins, neg_t)
     {
         return ((-1.0 * c * ins[I]) + ...);
     }
 };
+} /* namespace detail */
 
 /**
  * @brief      This class implements the actual DTF in difference equation form
@@ -309,7 +300,7 @@ constexpr auto makeDTF(const TAsPolicy& As, const TBsPolicy& Bs, TTickPolicy,
  */
 template<class... TCs>
 constexpr auto makeCs(const TCs&... cs)
-    -> HeterogeneousCSet<decltype(detail::C(TCs{}))...>
+    -> detail::HeterogeneousCSet<decltype(detail::C(TCs{}))...>
 {
     using cs_t = typename std::tuple_element<0, std::tuple<TCs...>>::type;
     static_assert(std::is_same<float, cs_t>::value, "Invalid C type");
@@ -327,7 +318,7 @@ constexpr auto makeCs(const TCs&... cs)
  */
 template<class... TCs>
 constexpr auto makeHomogeonousCs(const TCs&... cs)
-    -> HomogeneousCSet<decltype(detail::C(TCs{}))...>
+    -> detail::HomogeneousCSet<decltype(detail::C(TCs{}))...>
 {
     using cs_t = typename std::tuple_element<0, std::tuple<TCs...>>::type;
     static_assert(std::is_same<float, cs_t>::value, "Invalid C type");
@@ -335,7 +326,6 @@ constexpr auto makeHomogeonousCs(const TCs&... cs)
 }
 
 namespace util {
-namespace detail {
 /**
  * @brief      Makes a moving average.
  *
@@ -347,7 +337,7 @@ namespace detail {
  * @return     { description_of_the_return_value }
  */
 template<uint32_t Tsize, size_t ... I>
-constexpr auto makeMovingAvg(::dtfe::detail::index_sequence<I ...>)
+constexpr auto makeMovingAvg(::zeval::detail::index_sequence<I ...>)
     -> decltype(makeHomogeonousCs((1.0f / Tsize * (I / I))...))
 {
     return makeHomogeonousCs(((void) I, (1.0f / Tsize))...);
@@ -364,12 +354,11 @@ constexpr auto makeMovingAvg(::dtfe::detail::index_sequence<I ...>)
  * @return     { description_of_the_return_value }
  */
 template<std::uint32_t Tsize, size_t ... I>
-constexpr auto makeDelay(::dtfe::detail::index_sequence<I ...>)
+constexpr auto makeDelay(::zeval::detail::index_sequence<I ...>)
     -> decltype(makeCs(((Tsize - I > 1) ? 0.0f : 1.0f)...))
 {
     return makeCs(((Tsize - I > 1) ? 0.0f : 1.0f)...);
 }
-} /* namespace detail */
 
 /**
  * @brief      Makes a moving average (FIR) filter DTF
@@ -386,8 +375,8 @@ template<uint32_t Tsize, class TTickPolicy>
 constexpr auto makeMovingAvg(TTickPolicy p, uint16_t Ts)
     //-> decltype(makeDTF(makeCs(0.0f), BCs, p, Ts))
 {
-    auto BCs = detail::makeMovingAvg<Tsize>(
-        ::dtfe::detail::make_index_sequence<Tsize>{}
+    auto BCs = makeMovingAvg<Tsize>(
+        ::zeval::detail::make_index_sequence<Tsize>{}
     );
     return makeDTF(makeCs(0.0f), BCs, p, Ts);
 }
@@ -462,10 +451,10 @@ constexpr auto makeDelay(TTickPolicy p, uint16_t Ts)
     // -> decltype(makeDTF(makeCs(0.0f), makeCs(0.0f, 0.0f, 0.0f), p, Ts))
 {
     // Constant delay
-    auto BCs = detail::makeDelay<Tsize>(
-        ::dtfe::detail::make_index_sequence<Tsize>{}
+    auto BCs = makeDelay<Tsize>(
+        ::zeval::detail::make_index_sequence<Tsize>{}
     );
     return makeDTF(makeCs(0.0f), BCs, p, Ts); // TODO
 }
 } /* namespace util */
-} /* namespace dtfe */
+} /* namespace zeval */

@@ -1,9 +1,9 @@
-#include <dtfeval/dtfeval.hpp>
+#include <zeval/zeval.hpp>
 #include <catch2/catch_all.hpp>
 
 TEST_CASE("test_makeCs")
 {
-    auto num = dtfe::makeCs(4.0f, 2.2f);
+    auto num = zeval::makeCs(4.0f, 2.2f);
     REQUIRE(num.size == 2);
 }
 
