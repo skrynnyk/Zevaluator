@@ -277,10 +277,16 @@ public:
  */
 template<class TAsPolicy, class TBsPolicy, class TTickPolicy>
 class DTF {
-    static_assert(std::is_base_of<detail::cset_t, TAsPolicy>::value, 
+    static_assert(std::is_base_of<detail::cset_t, TAsPolicy>::value &&
+                  std::is_base_of<detail::cset_t, TBsPolicy>::value, 
                   "Not a `HeterogeneousCSet` nor a `HomogeneousCSet` policy");
-    static_assert(std::is_base_of<detail::cset_t, TBsPolicy>::value, 
-                  "Not a `HeterogeneousCSet` nor a `HomogeneousCSet` policy");
+public:
+    using Ys_t = std::array<float, TAsPolicy::size>;
+    using Us_t = std::array<float, TBsPolicy::size>;
+    
+    /** DTF sampling interval in ticks (tick units must be managed by user) */
+    const uint16_t Ts = 1;
+
 private:
     /** A coefficient set (applies to TF outputs, i.e. Ys) */
     TAsPolicy _As;
@@ -288,23 +294,20 @@ private:
     /** B coefficient set (applies to TF inputs, i.e. Us) */
     TBsPolicy _Bs;
     
-    /** DTF sampling interval in ticks (tick units must be managed by user) */
-    const uint16_t _Ts = 1;
-    
     /** Last tick at which the TF was evaluated */
     uint32_t _last_tick = 0;
 
     /** Storage for DTF outputs */
-    std::array<float, TAsPolicy::size> _Ys{ 0 };
+    Ys_t _Ys{ 0 };
 
     /** Storage for DTF inputs */
-    std::array<float, TBsPolicy::size> _Us{ 0 };
+    Us_t _Us{ 0 };
 
 public:
     constexpr DTF(const TAsPolicy& as, const TBsPolicy& bs, uint16_t ts)
         : _As{ as }
         , _Bs{ bs }
-        , _Ts{ ts }
+        , Ts{ ts }
     {
         // TODO: make C/Y/U type derived from template parameter (AS 7/11/2021)
     }
@@ -320,11 +323,11 @@ public:
      *
      * @return     The result of DTF evaluation
      */
-    float operator()(float U) {
+    constexpr float operator()(float U) {
         // Zero-order Hold
         // TODO: make policy-configurable? (AS 7/11/21)
         uint32_t tick = TTickPolicy::getTick();
-        if (tick < _last_tick + _Ts) { return _Ys[0]; }
+        if (tick < _last_tick + Ts) { return _Ys[0]; }
 
         addPoint(U, _Us);
         float Y = _Bs(_Us, detail::pos_t{}) + _As(_Ys, detail::neg_t{});
@@ -332,6 +335,27 @@ public:
 
         _last_tick = tick;
         return Y;
+    }
+
+    constexpr float operator()() const {
+        return _Ys[0];
+    }
+
+
+    constexpr void reset() {
+        for (auto& y : _Ys) { y = 0; }
+        for (auto& u : _Us) { u = 0; }
+    }
+
+    constexpr void setInitialConditions(const Us_t& Us, const Ys_t& Ys) {
+        for (int i = 0; i < Us.size(); i++) { _Us[i] = Us[i]; }
+        for (int i = 0; i < Ys.size(); i++) { _Ys[i] = Ys[i]; }
+    }
+
+    constexpr void setCs(const TAsPolicy& as, const TBsPolicy& bs) {
+        _As = as;
+        _Bs = bs;
+        reset();
     }
 
 private:
