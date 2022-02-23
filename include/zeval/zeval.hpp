@@ -112,6 +112,50 @@ private:
 };
 
 /**
+ * @brief      This class represents a set (i.e. numerator or denominator) of 
+ *             distinct DTF coefficients that, given corresponding inputs, can 
+ *             compute its own value.
+ *
+ * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
+ */
+template<std::size_t N>
+class RuntimeHeterogeneousCSet : detail::cset_t {
+public:
+    /** Number of coefficients in this set */
+    constexpr static size_t size = N;
+
+private:
+    /** Container of individual coefficients */
+    std::array<float, N> _cs;
+    // TODO: see if tuple is really necessary as storage (AS 7/12/2021)
+
+public:
+    constexpr RuntimeHeterogeneousCSet(const std::array<float, N>& cs)
+        : _cs{ cs }
+    {}
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::pos_t sign)
+    {
+        float val = 0;
+        for (int i = 0; i < ins.size(); i++) {
+            val += _cs[i] * ins[i];
+        }
+        return val;
+    }
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::neg_t sign)
+    {
+        float val = 0;
+        for (int i = 0; i < ins.size(); i++) {
+            val += -1.0f * _cs[i] * ins[i];
+        }
+        return val;
+    }
+};
+
+/**
  * @brief      This class represents a set (i.e. numerator or denominator) of a 
  *             singular, repeated DTF  coefficient that, given corresponding
  *             inputs, can compute its own value.
@@ -172,6 +216,54 @@ private:
                             const std::array<float, size> ins, neg_t)
     {
         return ((-1.0 * c * ins[I]) + ...);
+    }
+};
+
+/**
+ * @brief      This class represents a set (i.e. numerator or denominator) of a 
+ *             singular, repeated DTF  coefficient that, given corresponding
+ *             inputs, can compute its own value.
+ *             
+ * @detail     This class serves as a space-optimization -- if the coefficient 
+ *             is the same for every input, then why store multiple copies of 
+ *             the same coefficient value? :)
+ *
+ * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
+ */
+// template<typename... Cs>
+template<std::size_t N>
+class RuntimeHomogeneousCSet : detail::cset_t {
+public:
+    /** Number of coefficients in this set */
+    constexpr static size_t size = N;
+
+private:
+    /** The singluar coefficient */
+    float _c;
+
+public:
+    constexpr RuntimeHomogeneousCSet(const std::array<float, N>& cs)
+        : _c( cs[0] )
+    {}
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::pos_t sign)
+    {
+        float val = 0;
+        for (const auto& in : ins) {
+            val += _c * in;
+        }
+        return val;
+    }
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::neg_t sign)
+    {
+        float val = 0;
+        for (const auto& in : ins) {
+            val += -1.0f * _c * in;
+        }
+        return val;
     }
 };
 } /* namespace detail */
