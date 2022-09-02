@@ -1,10 +1,30 @@
 /**
  * @file       zeval.hpp
+ * 
+ * @author     Alex Skrynnyk (github.com/skrynnyk)
  *
- * @brief      This file implements the Z-domain Transfer Function evaluation 
- *             utility library that handle the set up and handling of
- *             difference-equation form of discretized TFs, simply requiring the
- *             user to specify the numerator and denominator coefficients.
+ * @brief      This is a header-only implementation of a utility for evaluation
+ *             of Z-domain Transfer Functions. It makes it trivial to set up and 
+ *             evaluate the difference-equation form of discrete TFs, simply
+ *             requiring the user to specify the numerator and denominator
+ *             coefficients.
+ *             
+ * @detail     At its core, all that Zeval does is take any discrete transfer
+ *             function specified in the follwing form
+ * 
+ * 
+ *                          b[0] + b[1] * z^-1 + ... + b[i] * z^-i
+ *                 G(z) = ------------------------------------------
+ *                             1 + a[0] * z^-1 + ... + a[j] * z^-j
+ * 
+ *                        
+ *             and stood it up and evaluate it in its difference equation form, 
+ *             where `Y` is output, and `U` is input
+ * 
+ *               
+ *                 Y(n) =   b[0] * U(n)   + ... + b[i] * U(n-i) 
+ *                        - a[0] * Y(n-1) - ... - a[j] * Y(n-j-1)
+ * 
  * 
  * @copyright  Copyright 2021 Alex Skrynnyk. All rights reserved.
  * 
@@ -17,8 +37,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in 
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -81,7 +101,7 @@ public:
     /** Number of coefficients in this set */
     constexpr static size_t size = sizeof...(Cs);
 
-private:
+public:
     /** Container of individual coefficients */
     std::tuple<decltype(Cs::val)...> _cs;
     // TODO: see if tuple is really necessary as storage (AS 7/12/2021)
@@ -191,7 +211,7 @@ public:
     /** Number of coefficients in this set */
     constexpr static size_t size = sizeof...(Cs);
 
-private:
+// private:
     /** The singluar coefficient */
     float _c;
 
@@ -307,7 +327,7 @@ public:
     /** DTF sampling interval in ticks (tick units must be managed by user) */
     const uint16_t Ts = 1;
 
-private:
+public:
     /** A coefficient set (applies to TF outputs, i.e. Ys) */
     TAsPolicy _As;
 
@@ -324,7 +344,7 @@ private:
     Us_t _Us{ 0 };
 
 public:
-    constexpr DTF(const TAsPolicy& as, const TBsPolicy& bs, uint16_t ts)
+    constexpr DTF(const TBsPolicy& bs,const TAsPolicy& as,  uint16_t ts)
         : _As{ as }
         , _Bs{ bs }
         , Ts{ ts }
@@ -351,6 +371,7 @@ public:
 
         addPoint(U, _Us);
         float Y = _Bs(_Us, detail::pos_t{}) + _As(_Ys, detail::neg_t{});
+
         addPoint(Y, _Ys);
 
         _last_tick = tick;
@@ -440,12 +461,12 @@ private:
  * @return     The usable TF object
  */
 template<class TAsPolicy, class TBsPolicy, class TTickPolicy>
-constexpr auto makeDTF(const TAsPolicy& As, const TBsPolicy& Bs, TTickPolicy,
+constexpr auto makeDTF(const TBsPolicy& Bs, const TAsPolicy& As, TTickPolicy,
                        uint16_t Ts)
     -> DTF<TAsPolicy, TBsPolicy, TTickPolicy>
 {
     // TODO: consume the first A coef as 1 to follow convention (AS 7/12/2021) 
-    return { As, Bs, Ts };
+    return { Bs, As, Ts };
 }
 
 /**
@@ -476,7 +497,7 @@ constexpr auto makeCs(const TCs&... cs)
  * @return     A `HomogeneousCSet` containing the specified coefs
  */
 template<class... TCs>
-constexpr auto makeHomogeonousCs(const TCs&... cs)
+constexpr auto makeHomogeneousCs(const TCs&... cs)
     -> detail::HomogeneousCSet<decltype(detail::C(TCs{}))...>
 {
     using cs_t = typename std::tuple_element<0, std::tuple<TCs...>>::type;
