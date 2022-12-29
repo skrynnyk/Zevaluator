@@ -1,4 +1,5 @@
 
+
 # Z-evaluator
 
 `Z-eval` is a single-header C++11 library for efficient transformation and real-time evaluation of Discrete Transfer Functions (DTFs) in the difference-equation form -- you simply have to specify the numerator and denominator coefficients.
@@ -6,13 +7,14 @@
 # Table of Contents
 
 - Overview
-	- Making a Discrete TF
-	- Using a Discrete TF
-	- Algebraic/Utility DTFs
-	  - Integral / Derivative / Delay
-	  - Low-Pass Filters
-	- Points of Configuration
-	- Advanced Features
+    - Making a Discrete TF
+    - Using a Discrete TF
+    - Algebraic/Utility DTFs
+      - Integral / Derivative / Delay
+      - Low-Pass Filters
+      - PID Controller
+    - Points of Configuration
+    - Advanced Features
 - API Reference
 - Benchmarks
 - License
@@ -72,7 +74,7 @@ auto Gz_integrator = zeval::util::makeTrapezoidalIntegrator(TickPolicy{}, 10);
 
 // Emulating some data acquisition loop
 while (is_reading) {
-	Gz_integrator(readSignal());
+    Gz_integrator(readSignal());
 }
 
 // Tip: parameter-less call returns the last computed DTF value
@@ -96,6 +98,31 @@ These two LPF methods are effective for most simple "signal smoothing" use cases
 |:------:|:--------------:|:-----------:|:--------------:|:----------:|:------------:|
 |   FIR  |   Guaranteed   |   Uniform   |    Constant    | Low - High |    Low - High    |
 |   IIR  | Not guaranteed |   Varying   |   Accumulates  |     Lowest    |    Lowest     |
+
+#### PID Controller
+You can implement a PID controller in the form of a DTF, so `Z-eval` provides a helper function to do the necessary coefficient transformations for you so that you can focus on using it instead, which could look something like this:
+```c++
+// Transfer function of a tuned discrete-time PID controller
+auto Gz_pid = zeval::util::makePID(
+    1.9f,          // Proportional gain term
+    0.5f,          // Integral gain term
+    0.1f,          // Derivative gain term
+    TickPolicy{},  // System tick policy object
+    10             // Sampling time (in TickPolicy tick units)
+);
+
+float setpoint = 42.0f;
+
+// Emulating the execution loop
+while (is_running) {
+    // Evaluate PID controller output given some sensor reading
+    float error = setpoint - readSignal()
+    float pid_output = Gz_pid(error);
+    // Update the output of some actuator based on PID output
+    setActuator(pid_output);
+}
+``` 
+However, there are limitations for PID controllers implemented in a transfer function form. For example, there is no way to implement clamping integral anti-windup as it cannot be expressed as an LTI system -- clamping is a non-linearity.
 
 ### Points of Configuration
 `Zeval` is implemented with configurability in mind by using "policy" classes passed as template parameters. `Zeval` provides a number of various policies for coefficient sets, platform-specific system ticks, and for DTF interpolation methods.
@@ -155,7 +182,8 @@ sometimes called "boxcar" or "FIR") low pass filter DTF object.
 
 ```c++
 template<class TickPolicy>
-constexpr auto makeSinglePoleIIR(float alpha, TickPolicy p, uint16_t Ts) -> DTF<...>
+constexpr auto makeSinglePoleIIR(float alpha, TickPolicy p, uint16_t Ts)
+    -> DTF<...>
 ```
 This is a utility function for quickly generating a single-pole infinite 
 impulse response (also sometimes called "recursive") low pass filter DTF object.
@@ -186,6 +214,16 @@ constexpr auto makeDelay(TTickPolicy p, uint16_t Ts) -> DTF<...>
 ```
 This is a utility function for quickly generating a signal-delaying DTF object.
 
-## License
+
+## `zeval::util::makePID()`
+
+```c++
+template<class TTickPolicy>
+constexpr auto makePID(float kp, float ki, float kd, TTickPolicy p, float Ts) 
+    -> DTF<...>
+```
+This is a utility function for quickly generating a PID controller DTF object
+
+# License
 
 Please see the `LICENSE` file for details.
