@@ -1,13 +1,52 @@
 /**
- * @defgroup   DTFEVAL dtfeval
+ * @file       zeval.hpp
+ * 
+ * @author     Alex Skrynnyk (github.com/skrynnyk)
  *
- * @brief      This file implements the Discrete Transfer Function (DTF)
- *             Evaluating utility class `zeval::DTF` that sets up the
- *             difference-equation form of a DTF given its numerator and
- *             denominator coefficients.
+ * @brief      This is a header-only implementation of a utility for evaluation
+ *             of Z-domain Transfer Functions. It makes it trivial to set up and 
+ *             evaluate the difference-equation form of discrete TFs, simply
+ *             requiring the user to specify the numerator and denominator
+ *             coefficients.
+ *             
+ * @detail     At its core, all that Zeval does is take any discrete transfer
+ *             function specified in the follwing form
+ * 
+ * 
+ *                          b[0] + b[1] * z^-1 + ... + b[i] * z^-i
+ *                 G(z) = ------------------------------------------
+ *                             1 + a[0] * z^-1 + ... + a[j] * z^-j
+ * 
+ *                        
+ *             and stood it up and evaluate it in its difference equation form, 
+ *             where `Y` is output, and `U` is input
+ * 
+ *               
+ *                 Y(n) =   b[0] * U(n)   + ... + b[i] * U(n-i) 
+ *                        - a[0] * Y(n-1) - ... - a[j] * Y(n-j-1)
+ * 
+ * 
+ * @copyright  Copyright 2021 Alex Skrynnyk. All rights reserved.
+ * 
+ * @license    This project is released under the MIT License.
  *
- * @author     Alex Skrynnyk
- * @date       2021
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in 
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 /* Includes ------------------------------------------------------------------*/
@@ -62,7 +101,7 @@ public:
     /** Number of coefficients in this set */
     constexpr static size_t size = sizeof...(Cs);
 
-private:
+public:
     /** Container of individual coefficients */
     std::tuple<decltype(Cs::val)...> _cs;
     // TODO: see if tuple is really necessary as storage (AS 7/12/2021)
@@ -112,6 +151,50 @@ private:
 };
 
 /**
+ * @brief      This class represents a set (i.e. numerator or denominator) of 
+ *             distinct DTF coefficients that, given corresponding inputs, can 
+ *             compute its own value.
+ *
+ * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
+ */
+template<std::size_t N>
+class RuntimeHeterogeneousCSet : detail::cset_t {
+public:
+    /** Number of coefficients in this set */
+    constexpr static size_t size = N;
+
+private:
+    /** Container of individual coefficients */
+    std::array<float, N> _cs;
+    // TODO: see if tuple is really necessary as storage (AS 7/12/2021)
+
+public:
+    constexpr RuntimeHeterogeneousCSet(const std::array<float, N>& cs)
+        : _cs{ cs }
+    {}
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::pos_t sign)
+    {
+        float val = 0;
+        for (int i = 0; i < ins.size(); i++) {
+            val += _cs[i] * ins[i];
+        }
+        return val;
+    }
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::neg_t sign)
+    {
+        float val = 0;
+        for (int i = 0; i < ins.size(); i++) {
+            val += -1.0f * _cs[i] * ins[i];
+        }
+        return val;
+    }
+};
+
+/**
  * @brief      This class represents a set (i.e. numerator or denominator) of a 
  *             singular, repeated DTF  coefficient that, given corresponding
  *             inputs, can compute its own value.
@@ -128,7 +211,7 @@ public:
     /** Number of coefficients in this set */
     constexpr static size_t size = sizeof...(Cs);
 
-private:
+// private:
     /** The singluar coefficient */
     float _c;
 
@@ -174,45 +257,97 @@ private:
         return ((-1.0 * c * ins[I]) + ...);
     }
 };
+
+/**
+ * @brief      This class represents a set (i.e. numerator or denominator) of a 
+ *             singular, repeated DTF  coefficient that, given corresponding
+ *             inputs, can compute its own value.
+ *             
+ * @detail     This class serves as a space-optimization -- if the coefficient 
+ *             is the same for every input, then why store multiple copies of 
+ *             the same coefficient value? :)
+ *
+ * @tparam     Cs    Set of individual coefficients, each wrapped by a `C` type
+ */
+// template<typename... Cs>
+template<std::size_t N>
+class RuntimeHomogeneousCSet : detail::cset_t {
+public:
+    /** Number of coefficients in this set */
+    constexpr static size_t size = N;
+
+private:
+    /** The singluar coefficient */
+    float _c;
+
+public:
+    constexpr RuntimeHomogeneousCSet(const std::array<float, N>& cs)
+        : _c( cs[0] )
+    {}
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::pos_t sign)
+    {
+        float val = 0;
+        for (const auto& in : ins) {
+            val += _c * in;
+        }
+        return val;
+    }
+
+    constexpr float operator()(const std::array<float, size>& ins, 
+                               detail::neg_t sign)
+    {
+        float val = 0;
+        for (const auto& in : ins) {
+            val += -1.0f * _c * in;
+        }
+        return val;
+    }
+};
 } /* namespace detail */
 
 /**
  * @brief      This class implements the actual DTF in difference equation form
  *
- * @tparam     TAsPolicy    { description }
- * @tparam     TBsPolicy    { description }
- * @tparam     TTickPolicy  { description }
+ * @tparam     TAsPolicy    Policy for the As coefficient set
+ * @tparam     TBsPolicy    Policy for the Bs coefficient set
+ * @tparam     TTickPolicy  Policy for getting system tick time
  */
 template<class TAsPolicy, class TBsPolicy, class TTickPolicy>
 class DTF {
-    static_assert(std::is_base_of<detail::cset_t, TAsPolicy>::value, 
+    static_assert(std::is_base_of<detail::cset_t, TAsPolicy>::value &&
+                  std::is_base_of<detail::cset_t, TBsPolicy>::value, 
                   "Not a `HeterogeneousCSet` nor a `HomogeneousCSet` policy");
-    static_assert(std::is_base_of<detail::cset_t, TBsPolicy>::value, 
-                  "Not a `HeterogeneousCSet` nor a `HomogeneousCSet` policy");
-private:
+public:
+    // TODO: make type specified via class template
+    using Ys_t = std::array<float, TAsPolicy::size>;
+    using Us_t = std::array<float, TBsPolicy::size>;
+    
+    /** DTF sampling interval in ticks (tick units must be managed by user) */
+    const uint16_t Ts = 1;
+
+public:
     /** A coefficient set (applies to TF outputs, i.e. Ys) */
     TAsPolicy _As;
 
     /** B coefficient set (applies to TF inputs, i.e. Us) */
     TBsPolicy _Bs;
     
-    /** DTF sampling interval in ticks (tick units must be managed by user) */
-    const uint16_t _Ts = 1;
-    
     /** Last tick at which the TF was evaluated */
     uint32_t _last_tick = 0;
 
     /** Storage for DTF outputs */
-    std::array<float, TAsPolicy::size> _Ys{ 0 };
+    Ys_t _Ys{ 0 };
 
     /** Storage for DTF inputs */
-    std::array<float, TBsPolicy::size> _Us{ 0 };
+    Us_t _Us{ 0 };
 
 public:
-    constexpr DTF(const TAsPolicy& as, const TBsPolicy& bs, uint16_t ts)
+    constexpr DTF(const TBsPolicy& bs,const TAsPolicy& as,  uint16_t ts)
         : _As{ as }
         , _Bs{ bs }
-        , _Ts{ ts }
+        , Ts{ ts }
     {
         // TODO: make C/Y/U type derived from template parameter (AS 7/11/2021)
     }
@@ -228,18 +363,63 @@ public:
      *
      * @return     The result of DTF evaluation
      */
-    float operator()(float U) {
+    constexpr float operator()(float U) {
         // Zero-order Hold
         // TODO: make policy-configurable? (AS 7/11/21)
         uint32_t tick = TTickPolicy::getTick();
-        if (tick < _last_tick + _Ts) { return _Ys[0]; }
+        if (tick < _last_tick + Ts) { return _Ys[0]; }
 
         addPoint(U, _Us);
         float Y = _Bs(_Us, detail::pos_t{}) + _As(_Ys, detail::neg_t{});
+
         addPoint(Y, _Ys);
 
         _last_tick = tick;
         return Y;
+    }
+
+    /**
+     * @brief      Returns the latest evaluation value of the TF
+     *
+     * @return     latest computed output of this TF object
+     */
+    constexpr float value() const {
+        return _Ys[0];
+    }
+
+    /**
+     * @brief      Resets the state (history of inputs/outputs) of the TF
+     */
+    constexpr void reset() {
+        for (auto& y : _Ys) { y = 0; }
+        for (auto& u : _Us) { u = 0; }
+    }
+
+    /**
+     * @brief      Sets the initial conditions.
+     * 
+     * @note       Take care to set only when not actively evaluating new inputs
+     *
+     * @param[in]  Us    The new value of input records
+     * @param[in]  Ys    The new value of output records
+     */
+    constexpr void setInitialConditions(const Us_t& Us, const Ys_t& Ys) {
+        for (int i = 0; i < Us.size(); i++) { _Us[i] = Us[i]; }
+        for (int i = 0; i < Ys.size(); i++) { _Ys[i] = Ys[i]; }
+    }
+
+    /**
+     * @brief      Updates the coefficient values
+     * 
+     * @note       Currently also resets inteernal state to guanratee stability
+     *
+     * @param[in]  as    The new As coefficients
+     * @param[in]  bs    The new Bs coefficients
+     */
+    constexpr void setCs(const TAsPolicy& as, const TBsPolicy& bs) {
+        _As = as;
+        _Bs = bs;
+        reset();
     }
 
 private:
@@ -267,36 +447,36 @@ private:
 
 /* Public functions ----------------------------------------------------------*/
 /**
- * @brief      Makes a DTF
+ * @brief      Helper for creating a discrete TF object
  *
- * @param[in]  As           { parameter_description }
- * @param[in]  Bs           { parameter_description }
- * @param[in]  <unnamed>    { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  As           The A coefficients
+ * @param[in]  Bs           The B coefficients
+ * @param[in]  <unnamed>    System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     TAsPolicy          { description }
- * @tparam     TBsPolicy          { description }
- * @tparam     TTickPolicy  { description }
+ * @tparam     TAsPolicy    Policy for the As coefficient set
+ * @tparam     TBsPolicy    Policy for the Bs coefficient set
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<class TAsPolicy, class TBsPolicy, class TTickPolicy>
-constexpr auto makeDTF(const TAsPolicy& As, const TBsPolicy& Bs, TTickPolicy,
+constexpr auto makeDTF(const TBsPolicy& Bs, const TAsPolicy& As, TTickPolicy,
                        uint16_t Ts)
     -> DTF<TAsPolicy, TBsPolicy, TTickPolicy>
 {
     // TODO: consume the first A coef as 1 to follow convention (AS 7/12/2021) 
-    return { As, Bs, Ts };
+    return { Bs, As, Ts };
 }
 
 /**
  * @brief      Makes a DTF coefficient set with unique values
  *
- * @param[in]  cs    The create struct
+ * @param[in]  cs    The set of coefficient values
  *
- * @tparam     TCs   { description }
+ * @tparam     TCs   Type of the individual coefficients
  *
- * @return     { description_of_the_return_value }
+ * @return     A `HeterogeneousCSet` containing the specified coefs
  */
 template<class... TCs>
 constexpr auto makeCs(const TCs&... cs)
@@ -310,14 +490,14 @@ constexpr auto makeCs(const TCs&... cs)
 /**
  * @brief      Makes a DTF coefficient set composed of the same value
  *
- * @param[in]  cs    The coefficients
+ * @param[in]  cs    The set of coefficient values
  *
- * @tparam     TCs   { description }
+ * @tparam     TCs   Type of the individual coefficients
  *
- * @return     { description_of_the_return_value }
+ * @return     A `HomogeneousCSet` containing the specified coefs
  */
 template<class... TCs>
-constexpr auto makeHomogeonousCs(const TCs&... cs)
+constexpr auto makeHomogeneousCs(const TCs&... cs)
     -> detail::HomogeneousCSet<decltype(detail::C(TCs{}))...>
 {
     using cs_t = typename std::tuple_element<0, std::tuple<TCs...>>::type;
@@ -326,16 +506,6 @@ constexpr auto makeHomogeonousCs(const TCs&... cs)
 }
 
 namespace util {
-/**
- * @brief      Makes a moving average.
- *
- * @param[in]  <unnamed>  { parameter_description }
- *
- * @tparam     Tsize      { description }
- * @tparam     I          { description }
- *
- * @return     { description_of_the_return_value }
- */
 template<uint32_t Tsize, size_t ... I>
 constexpr auto makeMovingAvg(::zeval::detail::index_sequence<I ...>)
     -> decltype(makeHomogeonousCs((1.0f / Tsize * (I / I))...))
@@ -343,16 +513,6 @@ constexpr auto makeMovingAvg(::zeval::detail::index_sequence<I ...>)
     return makeHomogeonousCs(((void) I, (1.0f / Tsize))...);
 }
 
-/**
- * @brief      Makes a delay.
- *
- * @param[in]  <unnamed>  { parameter_description }
- *
- * @tparam     Tsize      { description }
- * @tparam     I          { description }
- *
- * @return     { description_of_the_return_value }
- */
 template<std::uint32_t Tsize, size_t ... I>
 constexpr auto makeDelay(::zeval::detail::index_sequence<I ...>)
     -> decltype(makeCs(((Tsize - I > 1) ? 0.0f : 1.0f)...))
@@ -361,15 +521,15 @@ constexpr auto makeDelay(::zeval::detail::index_sequence<I ...>)
 }
 
 /**
- * @brief      Makes a moving average (FIR) filter DTF
+ * @brief      Makes a moving average (FIR) low pass filter\
  *
- * @param[in]  p            { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     Tsize        { description }
- * @tparam     TTickPolicy  { description }
+ * @tparam     Tsize        Size of the moving average window
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<uint32_t Tsize, class TTickPolicy>
 constexpr auto makeMovingAvg(TTickPolicy p, uint16_t Ts)
@@ -382,16 +542,15 @@ constexpr auto makeMovingAvg(TTickPolicy p, uint16_t Ts)
 }
 
 /**
- * @brief      Makes a single pole IIR filter DTF
+ * @brief      Makes a simple single pole IIR low pass filter
  *
- * @param[in]  alpha        The alpha
- * @param[in]  p            { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  alpha        The alpha value ("smoothing factor")
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     Tsize        { description }
- * @tparam     TTickPolicy  { description }
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<class TTickPolicy>
 constexpr auto makeSinglePoleIIR(float alpha, TTickPolicy p, uint16_t Ts)
@@ -401,14 +560,14 @@ constexpr auto makeSinglePoleIIR(float alpha, TTickPolicy p, uint16_t Ts)
 }
 
 /**
- * @brief      Makes a differentiator.
+ * @brief      Makes a discrete differentiator
  *
- * @param[in]  p            { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     TTickPolicy  { description }
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<class TTickPolicy>
 constexpr auto makeDifferentiator(TTickPolicy p, uint16_t Ts)
@@ -418,14 +577,14 @@ constexpr auto makeDifferentiator(TTickPolicy p, uint16_t Ts)
 }
 
 /**
- * @brief      Makes an integrator.
+ * @brief      Makes a discrete rectangular integrator.
  *
- * @param[in]  p            { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     TTickPolicy  { description }
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<class TTickPolicy>
 constexpr auto makeIntegrator(TTickPolicy p, uint16_t Ts)
@@ -436,15 +595,15 @@ constexpr auto makeIntegrator(TTickPolicy p, uint16_t Ts)
 }
 
 /**
- * @brief      Makes a moving average (FIR) filter DTF
+ * @brief      Makes a delay line filter
  *
- * @param[in]  p            { parameter_description }
- * @param[in]  Ts           { parameter_description }
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized TF sampling time
  *
- * @tparam     Tsize        { description }
- * @tparam     TickPolicy  { description }
+ * @tparam     Tsize        Length of the delay
+ * @tparam     TTickPolicy  Policy for getting system tick time
  *
- * @return     { description_of_the_return_value }
+ * @return     The usable TF object
  */
 template<std::uint32_t Tsize, class TTickPolicy>
 constexpr auto makeDelay(TTickPolicy p, uint16_t Ts)
