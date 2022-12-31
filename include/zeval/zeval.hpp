@@ -615,5 +615,31 @@ constexpr auto makeDelay(TTickPolicy p, uint16_t Ts)
     );
     return makeDTF(makeCs(0.0f), BCs, p, Ts); // TODO
 }
+
+/**
+ * @brief      Makes a PID controller transfer function.
+ *
+ * @param[in]  kp           P gain
+ * @param[in]  ki           I gain
+ * @param[in]  kd           D gain
+ * @param[in]  p            System tick getter policy object
+ * @param[in]  Ts           Discretized PID sampling time
+ *
+ * @tparam     TTickPolicy  Policy for getting system tick time
+ *
+ * @return     The usable PID TF object
+ */
+template<class TTickPolicy>
+constexpr auto makePID(float kp, float ki, float kd, TTickPolicy p, float Ts) {
+    const float num_a =  kp + ki * (Ts / 2.0) + kd / Ts;
+    const float num_b = -kp + ki * (Ts / 2.0) - 2 * kd / Ts;
+    const float num_c =  kd / Ts;
+    const float den_b = -1.0f;
+    const float den_c =  0.0f;
+    return makeDTF(makeCs(num_a, num_b, num_c),
+                   makeCs(den_b, den_c),
+                   p,
+                   Ts);
+}
 } /* namespace util */
 } /* namespace zeval */
